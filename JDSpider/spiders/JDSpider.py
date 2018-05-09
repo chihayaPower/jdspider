@@ -13,7 +13,7 @@ import requests
 from scrapy import Spider
 from scrapy.selector import Selector
 from scrapy.http import Request
-from JDSpider.items import *
+from items import *
 
 
 key_word = ['book', 'e', 'channel', 'mvd', 'list']
@@ -176,7 +176,7 @@ class JDSpider(Spider):
             data = json.loads(response.text)
         except Exception as e:
             print('get comment failed:', e)
-            return None
+            return
 
         product_id = response.meta['product_id']
 
@@ -308,7 +308,7 @@ class JDSpider(Spider):
             data = json.loads(response.text)
         except Exception as e:
             print('get comment failed:', e)
-            return None
+            return
 
         product_id = response.meta['product_id']
 

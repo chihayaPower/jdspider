@@ -11,7 +11,7 @@ import random
 import redis
 import json
 import logging
-from JDSpider.user_agents import agents
+#from JDSpider.user_agents import agents
 from scrapy.exceptions import IgnoreRequest
 from scrapy.utils.response import response_status_message
 from scrapy.downloadermiddlewares.retry import RetryMiddleware
