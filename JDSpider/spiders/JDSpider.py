@@ -15,6 +15,10 @@ from scrapy.selector import Selector
 from scrapy.http import Request
 from items import *
 
+import sys
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
 
 key_word = ['book', 'e', 'channel', 'mvd', 'list']
 Base_url = 'https://list.jd.com'
@@ -23,13 +27,57 @@ comment_url = 'https://club.jd.com/comment/productPageComments.action?productId=
 favourable_url = 'https://cd.jd.com/promotion/v2?skuId=%s&area=1_72_2799_0&shopId=%s&venderId=%s&cat=%s'
 
 
+allNum = 0
+
+
+wantList = [
+            "手机", 
+            "家用电器", 
+            "数码", 
+            "电脑办公", 
+            #"钟表"
+            ]
+
+smallNotWantList = [
+                    "选号中心",
+                    "装宽带",
+                    "办套餐",
+                    "手机贴膜",
+                    "数据线",
+                    "手机保护套",
+                    "创意配件",
+                    "手机饰品",
+                    "酒柜",
+                    "冲印服务",
+                    "手机电池",
+                    "延保服务",
+                    "杀毒软件",
+                    "积分商品",
+                    
+                    "组装电脑",
+                    "纸类",
+                    "办公文具",
+                    "学生文具",
+                    "财会用品",
+                    "文件管理",
+                    "本册/便签",
+                    "笔类",
+                    "画具画材",
+                    "刻录碟片/附件",
+                    "上门安装",
+                    "延保服务",
+                    "维修保养",
+                    "电脑软件",
+                    ]
+
 class JDSpider(Spider):
     name = "JDSpider"
     allowed_domains = ["jd.com"]
     start_urls = [
         'https://www.jd.com/allSort.aspx'
     ]
-    logging.getLogger("requests").setLevel(logging.WARNING)  # 将requests的日志级别设成WARNING
+    logging.getLogger("requests").setLevel(logging.ERROR)  # 将requests的日志级别设成WARNING
+
 
     def start_requests(self):
         for url in self.start_urls:
@@ -39,8 +87,86 @@ class JDSpider(Spider):
         """获取分类页"""
         selector = Selector(response)
         try:
-            texts = selector.xpath('//div[@class="category-item m"]/div[@class="mc"]/div[@class="items"]/dl/dd/a').extract()
+            #
+            #texts = selector.xpath('//div[@class="category-item m"]/div[@class="mc"]/div[@class="items"]/dl/dd/a').extract()
+            texts = selector.xpath('//div[@class="category-item m"]').extract()
+            
+            for text in texts: 
+                #productType1[0] 大分类  手机  图书等。。。。
+                productType1 = re.findall(r'<span>(.*?)</span>', text)
+                
+                if productType1[0] not in wantList:
+                    continue
+                
+                items = re.findall(r'<a href="(.*?)" target="_blank">(.*?)</a>', text)
+            
+                for item in items:
+                    #productType2 小分类  羊毛衫 衬衫等。。。。
+                    productType2 = item[1]
+                    
+                    if productType2 in smallNotWantList:
+                        continue
+                    
+                    #item[0]是各个分类的链接 如  //list.jd.com/list.html?cat=1316,1383,11928
+                    if item[0].split('.')[0][2:] in key_word:
+                        if item[0].split('.')[0][2:] != 'list':
+                            #除去list的    其他频道页面  见key_word  channel.jd.com/1316-1384.html
+                            yield Request(url='https:' + item[0], callback=self.parse_category)
+                        else:
+                            #产品列表的页面
+                            categoriesItem = CategoriesItem()
+                            categoriesItem['name'] = item[1]
+                            categoriesItem['url'] = 'https:' + item[0]
+                            categoriesItem['_id'] = item[0].split('=')[1].split('&')[0]
+                            
+
+                            #print "#################################"
+                            #print categoriesItem['name']
+                            #print categoriesItem['url']
+                            #print categoriesItem['_id']
+                            #print "#################################"
+                            
+                            yield categoriesItem
+                            
+                            #迭代这句
+                            yield Request(url='https:' + item[0], meta={"bigType": productType1[0], "smallType": productType2}, callback=self.parse_list)
+                            
+                                        
+            '''
+            for selectorChildren in selectorList:
+                
+                 #print selectorChildren
+                 productTypes = selectorChildren.xpath('//div[@class="mt"]/h2[@class="item-title"]/span')
+                 #texts = selectorChildren.xpath('//div[@class="mc"]/div[@class="items"]/dl/dd/a').extract()
+                 
+                 print '%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%'
+                 
+                 for productType in productTypes:
+                     print productType
+                 
+                 #print productTypes
+
+                 for productTypeAll in productTypes:
+                     productType = re.findall(r'<span>(.*?)</span>', productTypeAll)
+                     
+                     
+                     #productTypeStr = productType[0].decode('unicode_escape')
+                     print '########################'
+                     print productType[0]
+                     print '########################'
+
+                 print '%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%'
+                 
+            '''
+            '''
             for text in texts:
+                productType = re.findall(r'<span>(.*?)</span>', text)
+                
+                print '########################'
+                print productType
+                print '########################'
+                
+
                 items = re.findall(r'<a href="(.*?)" target="_blank">(.*?)</a>', text)
                 for item in items:
                     if item[0].split('.')[0][2:] in key_word:
@@ -53,6 +179,8 @@ class JDSpider(Spider):
                             categoriesItem['_id'] = item[0].split('=')[1].split('&')[0]
                             yield categoriesItem
                             yield Request(url='https:' + item[0], callback=self.parse_list)
+                '''
+
         except Exception as e:
             print('error:', e)
 
@@ -61,13 +189,24 @@ class JDSpider(Spider):
 
     def parse_list(self, response):
         """分别获得商品的地址和下一页地址"""
+        
+        bigType = response.meta["bigType"]
+        smallType = response.meta["smallType"]
+        
+        
         meta = dict()
         meta['category'] = response.url.split('=')[1].split('&')[0]
+        meta['bigType'] = bigType
+        meta['smallType'] = smallType
+        
+        #print response.url.split('=')[1].split('&')[0]
 
         selector = Selector(response)
         texts = selector.xpath('//*[@id="plist"]/ul/li/div/div[@class="p-img"]/a').extract()
         for text in texts:
+            #items https://item.jd.com/11882312022.html  产品详情页
             items = re.findall(r'<a target="_blank" href="(.*?)">', text)
+            #print items[0]
             yield Request(url='https:' + items[0], callback=self.parse_product, meta=meta)
 
         # 测试
@@ -78,17 +217,61 @@ class JDSpider(Spider):
         next_list = response.xpath('//a[@class="pn-next"]/@href').extract()
         if next_list:
             # print('next page:', Base_url + next_list[0])
-            yield Request(url=Base_url + next_list[0], callback=self.parse_list)
+            yield Request(url=Base_url + next_list[0], callback=self.parse_list, meta={"bigType": bigType, "smallType": smallType})
 
+
+    # 解析产品详情页
     def parse_product(self, response):
         """商品页获取title,price,product_id"""
+        
+        global allNum
+        
+        bigType = response.meta["bigType"]
+        smallType = response.meta["smallType"]
+        
         category = response.meta['category']
         ids = re.findall(r"venderId:(.*?),\s.*?shopId:'(.*?)'", response.text)
         if not ids:
             ids = re.findall(r"venderId:(.*?),\s.*?shopId:(.*?),", response.text)
         vender_id = ids[0][0]
         shop_id = ids[0][1]
-
+        
+        
+        
+        brands = response.xpath('//*[@id="parameter-brand"]/li/a//text()').extract()
+        if len(brands) > 0:
+        #brand = response.xpath('//div[@class="detail"]/div[@class="ETab"]/div[@class="tab-con"]/div/div[@class="p-parameter"]/div[@class="p-parameter-list"]/li/a').extract()
+           print "#### %s ### %s ### %s ###"%(bigType, smallType, brands[0])
+        
+        
+        details = response.xpath('//div[@class="detail"]/div[@class="ETab"]/div[@class="tab-con"]/div[@class="hide"]/div[@class="Ptable"]/div[@class="Ptable-item"]/dl').extract()
+        
+        allNum = allNum + 1
+        #print details
+        
+        flag = False
+        
+        for detail in details:
+            #print detail
+            ptableItems = re.findall(r'<dt>(.*?)</dt><dd>(.*?)</dd>', detail)
+            
+            for ptableItem in ptableItems:
+                flag = True
+                print">>>>>>> [%s] ----------- [%s]" % (ptableItem[0], ptableItem[1])
+                
+            
+        #没有详情  从介绍里面拿    
+        if flag == False:
+            details = response.xpath('//div[@class="detail"]/div[@class="ETab"]/div[@class="tab-con"]/div/div[@class="p-parameter"]/ul[@class="parameter2 p-parameter-list"]').extract()
+            for detail in details:
+                ptableItems = re.findall(r'<li title="(.*?)">(.*?)</li>', detail)
+                for ptableItem in ptableItems:
+                    print">>>>>>> [%s]" % (ptableItem[1])
+            #if ptableItems:
+               #print ">>>>>>> %s"%ptableItems[0]
+        print "#################   %s   #################" % allNum
+        #print details
+        #print "#################################"
         # shop
         shopItem = ShopItem()
         shopItem['shopId'] = shop_id
@@ -168,7 +351,7 @@ class JDSpider(Spider):
         data = dict()
         data['product_id'] = product_id
         yield productsItem
-        yield Request(url=comment_url % (product_id, '0'), callback=self.parse_comments, meta=data)
+        #yield Request(url=comment_url % (product_id, '0'), callback=self.parse_comments, meta=data)
 
     def parse_comments(self, response):
         """获取商品comment"""

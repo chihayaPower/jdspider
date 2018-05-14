@@ -1,5 +1,6 @@
 eclipse.preferences.version=1
 encoding//JDSpider/items.py=utf-8
 encoding//JDSpider/middlewares.py=utf-8
+encoding//JDSpider/settings.py=utf-8
 encoding//JDSpider/spiders/JDSpider.py=utf-8
 encoding//JDSpider/spiders/items.py=utf-8
