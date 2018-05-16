@@ -14,6 +14,10 @@ from scrapy import Spider
 from scrapy.selector import Selector
 from scrapy.http import Request
 from items import *
+from elasticsearch import Elasticsearch
+import datetime
+
+from elasticsearch import helpers
 
 import sys
 reload(sys)
@@ -28,6 +32,13 @@ favourable_url = 'https://cd.jd.com/promotion/v2?skuId=%s&area=1_72_2799_0&shopI
 
 
 allNum = 0
+
+
+actions  = []
+blukSize = 10
+
+indexName = "test-index7"
+indexType = "event"
 
 
 wantList = [
@@ -68,7 +79,17 @@ smallNotWantList = [
                     "延保服务",
                     "维修保养",
                     "电脑软件",
+                    "京东服务",
                     ]
+
+
+smallWantList = ["洗衣机",
+                 "平板电视",
+                "空调",
+                "冰箱",]
+
+
+#es = Elasticsearch()
 
 class JDSpider(Spider):
     name = "JDSpider"
@@ -104,7 +125,10 @@ class JDSpider(Spider):
                     #productType2 小分类  羊毛衫 衬衫等。。。。
                     productType2 = item[1]
                     
-                    if productType2 in smallNotWantList:
+                    #if productType2 in smallNotWantList:
+                    #    continue
+                    
+                    if productType2 not in smallWantList:
                         continue
                     
                     #item[0]是各个分类的链接 如  //list.jd.com/list.html?cat=1316,1383,11928
@@ -207,7 +231,9 @@ class JDSpider(Spider):
             #items https://item.jd.com/11882312022.html  产品详情页
             items = re.findall(r'<a target="_blank" href="(.*?)">', text)
             #print items[0]
-            yield Request(url='https:' + items[0], callback=self.parse_product, meta=meta)
+            productUrl = 'https:' + items[0]
+            meta['productUrl'] = productUrl
+            yield Request(url=productUrl, callback=self.parse_product, meta=meta)
 
         # 测试
         # print('2')
@@ -217,17 +243,25 @@ class JDSpider(Spider):
         next_list = response.xpath('//a[@class="pn-next"]/@href').extract()
         if next_list:
             # print('next page:', Base_url + next_list[0])
-            yield Request(url=Base_url + next_list[0], callback=self.parse_list, meta={"bigType": bigType, "smallType": smallType})
+            yield Request(url=Base_url + next_list[0], callback=self.parse_list, meta={"bigType": bigType, "smallType": smallType })
 
 
     # 解析产品详情页
     def parse_product(self, response):
         """商品页获取title,price,product_id"""
         
+        esSaveItem = {}
+        
         global allNum
         
         bigType = response.meta["bigType"]
         smallType = response.meta["smallType"]
+        productUrl = response.meta['productUrl']
+        
+        esSaveItem["firstType"] = bigType
+        esSaveItem["secondType"] = smallType
+        esSaveItem["productUrl"] = productUrl
+        
         
         category = response.meta['category']
         ids = re.findall(r"venderId:(.*?),\s.*?shopId:'(.*?)'", response.text)
@@ -239,37 +273,98 @@ class JDSpider(Spider):
         
         
         brands = response.xpath('//*[@id="parameter-brand"]/li/a//text()').extract()
+        
+
+        
         if len(brands) > 0:
         #brand = response.xpath('//div[@class="detail"]/div[@class="ETab"]/div[@class="tab-con"]/div/div[@class="p-parameter"]/div[@class="p-parameter-list"]/li/a').extract()
-           print "#### %s ### %s ### %s ###"%(bigType, smallType, brands[0])
+           #print "#### %s ### %s ### %s ###"%(bigType, smallType, brands[0])
+           esSaveItem["brand"] = brands[0]
+        
+        #print productUrl
+        
+        fullName = response.xpath('//div[@class="product-intro clearfix"]/div[@class="itemInfo-wrap"]/div[@class="sku-name"]//text()').extract()[0]
+        
+        esSaveItem["fullName"] = fullName.strip()
+        #commentCount = response.xpath('//*[@id="comment-count"]/a').extract()[0]
+        
+        #print "#### %s ###"%(fullName)
         
         
-        details = response.xpath('//div[@class="detail"]/div[@class="ETab"]/div[@class="tab-con"]/div[@class="hide"]/div[@class="Ptable"]/div[@class="Ptable-item"]/dl').extract()
+        details1 = response.xpath('//div[@class="detail"]/div[@class="ETab"]/div[@class="tab-con"]/div[@class="hide"]/div[@class="Ptable"]/div[@class="Ptable-item"]/dl').extract()
         
         allNum = allNum + 1
         #print details
         
         flag = False
         
-        for detail in details:
+        for detail in details1:
             #print detail
             ptableItems = re.findall(r'<dt>(.*?)</dt><dd>(.*?)</dd>', detail)
             
             for ptableItem in ptableItems:
                 flag = True
-                print">>>>>>> [%s] ----------- [%s]" % (ptableItem[0], ptableItem[1])
+                #print">>>>>>> [%s] ----------- [%s]" % (ptableItem[0], ptableItem[1])
+                
+                if "品牌" in ptableItem[0]:
+                    esSaveItem["brand"] = ptableItem[1]
+                    
+                if "型号" in ptableItem[0] and "适用" not in ptableItem[0]:
+                    esSaveItem["model"] = ptableItem[1]
                 
             
         #没有详情  从介绍里面拿    
-        if flag == False:
-            details = response.xpath('//div[@class="detail"]/div[@class="ETab"]/div[@class="tab-con"]/div/div[@class="p-parameter"]/ul[@class="parameter2 p-parameter-list"]').extract()
-            for detail in details:
-                ptableItems = re.findall(r'<li title="(.*?)">(.*?)</li>', detail)
+        #if flag == False:
+        details2 = response.xpath('//div[@class="detail"]/div[@class="ETab"]/div[@class="tab-con"]/div/div[@class="p-parameter"]/ul[@class="parameter2 p-parameter-list"]').extract()
+        for detail in details2:
+            ptableItems = re.findall(r'<li title="(.*?)">(.*?)</li>', detail)
+            for ptableItem in ptableItems:
+                #print">>>>>>> [%s]" % (ptableItem[1])
+                
+                if flag == False:
+                    if "品牌" in ptableItem[1]:
+                       esSaveItem["brand"] = ptableItem[1].split('：')[1]
+                    
+                    if "型号" in ptableItem[1] and "适用" not in ptableItem[0]:
+                       esSaveItem["model"] = ptableItem[1].split('：')[1]
+                       
+                if "商品名称" in ptableItem[1]:
+                    esSaveItem["name"] = ptableItem[1].split('：')[1]
+                       
+        
+        
+        if esSaveItem.has_key("brand") != True:
+            esSaveItem["brand"] = 'unknown'
+        
+        if esSaveItem.has_key("model") != True:
+            #esSaveItem["model"] = 'unknown' 
+            for detail in details1:
+                #print "&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&"
+                #print detail
+                #print "&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&"
+                ptableItems = re.findall(r'<dt>(.*?)</dt>([\s]*?)<dd class="Ptable-tips">([\s\S]*?)</dd>([\s]*?)<dd>(.*?)</dd>', detail)
+                
                 for ptableItem in ptableItems:
-                    print">>>>>>> [%s]" % (ptableItem[1])
+                    #print">>>>>>> [%s] ----------- [%s]----------- [%s]----------- [%s]----------- [%s]" % (ptableItem[0], ptableItem[1], ptableItem[2], ptableItem[3], ptableItem[4])
+                    '''
+                    if "品牌" in ptableItem[0]:
+                        esSaveItem["brand"] = ptableItem[1]
+                    '''    
+                    if "型号" in ptableItem[0] and "适用" not in ptableItem[0]:
+                        esSaveItem["model"] = ptableItem[4]
+                        
+        
+        if esSaveItem.has_key("model") != True:
+            esSaveItem["model"] = 'unknown'        
+                                
+                  
+            
+        if esSaveItem.has_key("name") != True:
+            esSaveItem["name"] = esSaveItem["fullName"]   
+                    
             #if ptableItems:
                #print ">>>>>>> %s"%ptableItems[0]
-        print "#################   %s   #################" % allNum
+        print "#################   %s   #################  %s" % (allNum, productUrl)
         #print details
         #print "#################################"
         # shop
@@ -322,8 +417,10 @@ class JDSpider(Spider):
         # price
         response = requests.get(url=price_url + product_id)
         price_json = response.json()
-        productsItem['reallyPrice'] = price_json[0]['p']
-        productsItem['originalPrice'] = price_json[0]['m']
+        #productsItem['reallyPrice'] = price_json[0]['p']
+        #productsItem['originalPrice'] = price_json[0]['m']
+
+        #esSaveItem['reallyPrice'] = productsItem['reallyPrice']
 
         # 优惠
         res_url = favourable_url % (product_id, shop_id, vender_id, category.replace(',', '%2c'))
@@ -350,11 +447,29 @@ class JDSpider(Spider):
 
         data = dict()
         data['product_id'] = product_id
+        
+        data['esSaveItem'] = esSaveItem
+        
+        
+        commentUrl = comment_url % (product_id, '0')
+        
+        
         yield productsItem
-        #yield Request(url=comment_url % (product_id, '0'), callback=self.parse_comments, meta=data)
+        
+        
+
+        yield Request(url=comment_url % (product_id, '0'), callback=self.parse_comments, meta=data)
+        
+        
 
     def parse_comments(self, response):
         """获取商品comment"""
+        
+        global actions
+        global blukSize
+        global indexName
+        global indexType
+        
         try:
             data = json.loads(response.text)
         except Exception as e:
@@ -362,9 +477,50 @@ class JDSpider(Spider):
             return
 
         product_id = response.meta['product_id']
+        
+        esSaveItem = response.meta['esSaveItem']
 
+        
         commentSummaryItem = CommentSummaryItem()
         commentSummary = data.get('productCommentSummary')
+        commentSummaryItem['commentCount'] = commentSummary.get('commentCount')
+        
+        
+        if esSaveItem.has_key("commentCount") != True:
+            esSaveItem["commentCount"] = commentSummaryItem['commentCount']
+            #esSaveItemJsonStr = json.dumps(esSaveItem).decode('unicode-escape')
+            esSaveItem["timestamp"] = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.000+0800')
+            
+            esId = esSaveItem['firstType']+'|'+esSaveItem['secondType']+'|'+esSaveItem['brand']+'|'+esSaveItem['name']+'|'+esSaveItem['model']
+            #esSaveItemObject = json.loads(esSaveItemJsonStr)
+            
+            print "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$"
+            print esId
+            print esSaveItem
+            print "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$"
+            
+            action = {
+                "_index": indexName,
+                "_type": indexType,
+                "_id": esId,
+                "_source": esSaveItem
+                }
+            
+            actions.append(action)
+            
+            if len(actions) >= blukSize:
+                #helpers.bulk(es, actions)
+                actions = []
+            
+            #$es.index(index="test-index2",doc_type="event",id=esId,body=esSaveItem)
+        
+        #print "&&&&&&&&&&&&&& %s" % commentSummaryItem['commentCount']
+        
+        #print "################################################"
+        
+        yield commentSummaryItem
+        
+        '''
         commentSummaryItem['goodRateShow'] = commentSummary.get('goodRateShow')
         commentSummaryItem['poorRateShow'] = commentSummary.get('poorRateShow')
         commentSummaryItem['poorCountStr'] = commentSummary.get('poorCountStr')
@@ -484,6 +640,7 @@ class JDSpider(Spider):
             meta = dict()
             meta['product_id'] = product_id
             yield Request(url=url, callback=self.parse_comments2, meta=meta)
+        '''
 
     def parse_comments2(self, response):
         """获取商品comment"""
