@@ -18,8 +18,10 @@ from elasticsearch import Elasticsearch
 import datetime
 
 from elasticsearch import helpers
-
+from selenium import webdriver
 import sys
+import time
+import os
 reload(sys)
 sys.setdefaultencoding('utf-8')
 
@@ -30,14 +32,15 @@ price_url = 'https://p.3.cn/prices/mgets?skuIds=J_'
 comment_url = 'https://club.jd.com/comment/productPageComments.action?productId=%s&score=0&sortType=5&page=%s&pageSize=10'
 favourable_url = 'https://cd.jd.com/promotion/v2?skuId=%s&area=1_72_2799_0&shopId=%s&venderId=%s&cat=%s'
 
+os.environ['http_proxy'] = ''
 
 allNum = 0
 
 
 actions  = []
-blukSize = 10
+blukSize = 500
 
-indexName = "test-index7"
+indexName = "test-index9"
 indexType = "event"
 
 
@@ -83,13 +86,73 @@ smallNotWantList = [
                     ]
 
 
-smallWantList = ["洗衣机",
-                 "平板电视",
+smallWantList = [
+                "洗衣机",
+                "平板电视",
                 "空调",
-                "冰箱",]
+                "冰箱",
+                "燃气灶",
+                "油烟机",
+                "热水器",
+                "消毒柜",
+                "洗碗机",
+                
+                
+                "料理机", 
+                "榨汁机", 
+                "电饭煲", 
+                "电压力锅", 
+                "豆浆机", 
+                "咖啡机", 
+                "微波炉", 
+                "电烤箱 ",
+                "电磁炉", 
+                "面包机", 
+                "煮蛋器", 
+                "酸奶机", 
+                "电炖锅", 
+                "电水壶/热水瓶 ",
+                "电饼铛", 
+                "多用途锅 ",
+                "电烧烤炉", 
+                "果蔬解毒机", 
+                "其它厨房电器", 
+                "养生壶/煎药壶", 
+                "电热饭盒",
+
+                "取暖电器", 
+                "净化器", 
+                "加湿器", 
+                "扫地机器人", 
+                "吸尘器", 
+                "挂烫机/熨斗", 
+                "插座", 
+                "电话机", 
+                "清洁机", 
+                "除湿机", 
+                "干衣机", 
+                "收录/音机", 
+                "电风扇", 
+                "冷风扇", 
+                "其它生活电器", 
+                "生活电器配件", 
+                "净水器", 
+                "饮水机",
 
 
-#es = Elasticsearch()
+"投影机", "投影配件", "多功能一体机", "打印机", "传真设备", "验钞/点钞机","扫描设备", "复合机", "碎纸机", "考勤机", "收款/POS机", "会议音频视频", "保险柜", "装订/封装机", "安防监控", "办公家具", "白板",
+"数码相机", "单电/微单相机", "单反相机", "摄像机", "拍立得", "运动相机", "镜头", "户外器材", "影棚器材", "冲印服务", "数码相框",
+"智能手环", "智能手表", "智能眼镜", "运动跟踪器", "健康监测", "智能配饰", "智能家居", "体感车", "智能机器人", "无人机",
+"MP3/MP4", "智能设备", "耳机/耳麦", "便携/无线音箱", "音箱/音响", "高清播放器", "收音机", "MP3/MP4配件", "麦克风", "专业音频", "苹果配件",
+"笔记本", "超极本", "游戏本", "平板电脑", "平板电脑配件", "台式机", "服务器/工作站", "笔记本配件", "一体机",
+"CPU", "主板", "显卡", "硬盘", "SSD固态硬盘", "内存", "机箱", "电源", "显示器", "刻录机/光驱", "散热器", "声卡/扩展卡", "装机配件", "组装电脑",
+"移动硬盘", "U盘", "鼠标", "键盘", "摄像头", "手写板", "硬盘盒", "插座", "线缆", "UPS电源", "游戏设备", "电玩",  "网络仪表仪器",
+"游戏机", "游戏耳机", "手柄/方向盘",
+"路由器", "网卡", "交换机", "网络存储", "4G/3G上网", "网络盒子", "网络配件",
+                ]
+
+
+es = Elasticsearch()
 
 class JDSpider(Spider):
     name = "JDSpider"
@@ -98,6 +161,12 @@ class JDSpider(Spider):
         'https://www.jd.com/allSort.aspx'
     ]
     logging.getLogger("requests").setLevel(logging.ERROR)  # 将requests的日志级别设成WARNING
+    
+    
+    
+    #def __init__(self):
+        
+        #self.driver = webdriver.PhantomJS(executable_path=r"E:\phantomjs-2.1.1-windows\bin\phantomjs.exe")
 
 
     def start_requests(self):
@@ -250,6 +319,8 @@ class JDSpider(Spider):
     def parse_product(self, response):
         """商品页获取title,price,product_id"""
         
+        
+        
         esSaveItem = {}
         
         global allNum
@@ -360,11 +431,45 @@ class JDSpider(Spider):
                   
             
         if esSaveItem.has_key("name") != True:
-            esSaveItem["name"] = esSaveItem["fullName"]   
+            if len(esSaveItem["fullName"]) > 0:
+               esSaveItem["name"] = esSaveItem["fullName"]
+            else:
+               esSaveItem["name"] = 'unknown'    
                     
             #if ptableItems:
                #print ">>>>>>> %s"%ptableItems[0]
         print "#################   %s   #################  %s" % (allNum, productUrl)
+        
+        
+        #yield Request(url=productUrl, callback=self.parse_price_comments, meta=esSaveItem)
+        
+        '''
+        self.driver.get(productUrl)
+        time.sleep(1)
+        responseStr = self.driver.page_source
+        
+        selectorProduct = Selector(text = responseStr)
+        
+        try:
+           priceTexts = selectorProduct.xpath('//span[@class="p-price"]/span[2]//text()').extract()
+           for price in priceTexts:
+               esSaveItem['reallyPrice'] = price+""
+               #print price
+               
+           commentsTexts = selectorProduct.xpath('//div[@id="comment-count"]/a//text()').extract()
+           for comment in commentsTexts:
+               #print comment
+               esSaveItem["commentCount"] = comment
+               
+           self.saveToEsBluk(esSaveItem)
+        
+        except Exception as e:
+            self.saveToEsBluk(esSaveItem)
+            print('error:', e)              
+        '''
+  
+        
+
         #print details
         #print "#################################"
         # shop
@@ -407,8 +512,13 @@ class JDSpider(Spider):
             title = response.xpath('//div[@id="name"]/h1/text()').extract()[0]
         productsItem['name'] = title
         product_id = response.url.split('/')[-1][:-5]
+        
+        esSaveItem['productId'] = product_id+""
+        
         productsItem['_id'] = product_id
         productsItem['url'] = response.url
+        
+        
 
         # description
         desc = response.xpath('//ul[@class="parameter2 p-parameter-list"]//text()').extract()
@@ -417,10 +527,14 @@ class JDSpider(Spider):
         # price
         response = requests.get(url=price_url + product_id)
         price_json = response.json()
-        #productsItem['reallyPrice'] = price_json[0]['p']
-        #productsItem['originalPrice'] = price_json[0]['m']
-
-        #esSaveItem['reallyPrice'] = productsItem['reallyPrice']
+        
+        try:
+            productsItem['reallyPrice'] = price_json[0]['p']
+            productsItem['originalPrice'] = price_json[0]['m']
+    
+            esSaveItem['reallyPrice'] = productsItem['reallyPrice']+""
+        except Exception as e:
+            esSaveItem['reallyPrice'] = 'unknown'
 
         # 优惠
         res_url = favourable_url % (product_id, shop_id, vender_id, category.replace(',', '%2c'))
@@ -459,8 +573,67 @@ class JDSpider(Spider):
         
 
         yield Request(url=comment_url % (product_id, '0'), callback=self.parse_comments, meta=data)
+
+
+
+
+    '''    
+    def parse_price_comments(self, response):
         
         
+        print "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+        
+        productUrl = response.url
+        
+        self.driver.get(productUrl)
+        time.sleep(1)
+        responseStr = self.driver.page_source
+        
+        selectorProduct = Selector(text = responseStr)
+        
+        try:
+           texts = selectorProduct.xpath('//span[@class="p-price"]/span[2]//text()').extract()
+           for text in texts:
+               print text
+        
+        except Exception as e:
+            print('error:', e)
+    '''        
+            
+            
+            
+    def saveToEsBluk(self, esSaveItem):
+        
+        global actions
+        global blukSize
+        global indexName
+        global indexType
+        
+
+        esSaveItem["timestamp"] = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.000+0800')
+            
+        esId = esSaveItem['firstType']+'|'+esSaveItem['secondType']+'|'+esSaveItem['brand']+'|'+esSaveItem['name']+'|'+esSaveItem['model']
+            #esSaveItemObject = json.loads(esSaveItemJsonStr)
+            
+        print "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$"
+        print esId
+        print esSaveItem
+        print "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$"
+            
+        action = {
+            "_index": indexName,
+            "_type": indexType,
+            "_id": esId,
+            "_source": esSaveItem
+            }
+            
+        actions.append(action)
+        
+        if len(actions) >= blukSize:
+            helpers.bulk(es, actions)
+            actions = []
+            
+
 
     def parse_comments(self, response):
         """获取商品comment"""
@@ -484,6 +657,42 @@ class JDSpider(Spider):
         commentSummaryItem = CommentSummaryItem()
         commentSummary = data.get('productCommentSummary')
         commentSummaryItem['commentCount'] = commentSummary.get('commentCount')
+        
+
+        esSaveItem["commentCount"] = commentSummaryItem['commentCount']
+        #esSaveItemJsonStr = json.dumps(esSaveItem).decode('unicode-escape')
+        esSaveItem["timestamp"] = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.000+0800')
+        
+        
+        if esSaveItem['name'] == "unknown" and esSaveItem['model'] == "unknown":
+            esId = esSaveItem['firstType']+'|'+esSaveItem['secondType']+'|'+esSaveItem['brand']+'|'+esSaveItem['productId']+'|'+esSaveItem['productId']+'|'+esSaveItem['productId']
+        else:
+            esId = esSaveItem['firstType']+'|'+esSaveItem['secondType']+'|'+esSaveItem['brand']+'|'+esSaveItem['name']+'|'+esSaveItem['model']+'|'+esSaveItem['productId']
+        #esSaveItemObject = json.loads(esSaveItemJsonStr)
+        
+        
+        
+        
+        
+        print "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$"
+        print esId
+        print esSaveItem
+        print "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$"
+        
+        action = {
+            "_index": indexName,
+            "_type": indexType,
+            "_id": esId,
+            "_source": esSaveItem
+            }
+        
+        actions.append(action)
+        
+        if len(actions) >= blukSize:
+            helpers.bulk(es, actions)
+            actions = []
+
+        
         
         
         if esSaveItem.has_key("commentCount") != True:
@@ -509,7 +718,7 @@ class JDSpider(Spider):
             actions.append(action)
             
             if len(actions) >= blukSize:
-                #helpers.bulk(es, actions)
+                helpers.bulk(es, actions)
                 actions = []
             
             #$es.index(index="test-index2",doc_type="event",id=esId,body=esSaveItem)
